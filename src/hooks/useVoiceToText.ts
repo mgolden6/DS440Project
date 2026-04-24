@@ -3,8 +3,20 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-spe
 
 export function useVoiceToText() {
     const [status, setStatus] = useState<'idle' | 'listening' | 'done' | 'error'>('idle');
-    const [transcript, setTranscript] = useState('');
     const [error, setError] = useState<string | null>(null);
+
+    // Track finalized sentences (from continuous segments) and the current interim sentence separately
+    const [finalizedText, setFinalizedText] = useState('');
+    const [interimText, setInterimText] = useState('');
+
+    // The combined transcript to show to the user
+    const transcript = [finalizedText, interimText].filter(Boolean).join(' ');
+
+    const handleSetTranscript = useCallback((text: string) => {
+        // If the user manually edits the transcript, we treat it as finalized and clear interim
+        setFinalizedText(text);
+        setInterimText('');
+    }, []);
 
     useSpeechRecognitionEvent('start', () => {
         console.log('[DEBUG] Speech Recognition Started');
@@ -17,17 +29,21 @@ export function useVoiceToText() {
     });
 
     useSpeechRecognitionEvent('result', (event) => {
-        // Based on expo-speech-recognition docs, event.results contains the transcripts
-        let text = '';
-        if (event.results && event.results.length > 0) {
-            // For continuous recognition, you might want to combine them or just use the first transcript
-            // The library returns an array where results[0].transcript is often the full text.
-            text = event.results.map((r: any) => r.transcript).join(' ');
-        }
+        if (!event.results || event.results.length === 0) return;
+
+        // event.results contains alternative hypotheses for the *current* utterance segment.
+        // We only want the most confident one (the first one).
+        const currentSegment = event.results[0].transcript;
         
-        console.log('[DEBUG] Speech Recognition Result:', text);
-        if (text.trim()) {
-            setTranscript(text);
+        console.log(`[DEBUG] Speech Recognition Result: "${currentSegment}" (isFinal: ${event.isFinal})`);
+
+        if (event.isFinal) {
+            // When a segment is final, append it to finalizedText and clear interimText
+            setFinalizedText(prev => [prev, currentSegment].filter(Boolean).join(' '));
+            setInterimText('');
+        } else {
+            // Otherwise, just update the interim text
+            setInterimText(currentSegment);
         }
     });
 
@@ -41,7 +57,8 @@ export function useVoiceToText() {
 
     const startRecording = useCallback(async () => {
         console.log('[DEBUG] startRecording() called');
-        setTranscript('');
+        setFinalizedText('');
+        setInterimText('');
         setError(null);
 
         try {
@@ -75,5 +92,23 @@ export function useVoiceToText() {
         setStatus('done');
     }, []);
 
-    return { status, transcript, setTranscript, error, startRecording, stopRecording };
+    const abortRecording = useCallback(() => {
+        console.log('[DEBUG] abortRecording() called');
+        try {
+            ExpoSpeechRecognitionModule.abort();
+        } catch (e: any) {
+            console.warn('[DEBUG] abort() failed:', e.message);
+        }
+        setStatus('done');
+    }, []);
+
+    return { 
+        status, 
+        transcript, 
+        setTranscript: handleSetTranscript, 
+        error, 
+        startRecording, 
+        stopRecording,
+        abortRecording
+    };
 }

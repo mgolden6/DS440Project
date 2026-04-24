@@ -10,7 +10,7 @@ import { useFlowStore } from '@/store/flowStore';
 import { router } from 'expo-router';
 
 export default function HomeRecordingScreen() {
-    const { status, transcript, setTranscript, error, stopRecording, startRecording } = useVoiceToText();
+    const { status, transcript, setTranscript, error, stopRecording, startRecording, abortRecording } = useVoiceToText();
     // useAudioLevel handles background visualizer hooks, we keep it active.
     const volume = useAudioLevel(status === 'listening');
     const setFlowTranscript = useFlowStore((state) => state.setTranscript);
@@ -24,6 +24,10 @@ export default function HomeRecordingScreen() {
         if (Platform.OS === 'web' && !window.isSecureContext) {
             setIsSecure(false);
         }
+
+        return () => {
+            abortRecording();
+        };
     }, []);
 
     const handleStop = () => {
