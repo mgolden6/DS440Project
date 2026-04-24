@@ -63,9 +63,13 @@ export function segmentMeal(utterance: string): ExtractionResult {
     const glucoseMatch = lower.match(/(?:glucose|sugar|level)\s+(?:is\s+)?(\d+)/) || lower.match(/(\d+)\s+(?:mg\/dl|mgdl)/);
     if (glucoseMatch) glucose = parseInt(glucoseMatch[1]);
 
+    // Strip the glucose phrase entirely so it doesn't leave dangling words like "my"
+    let processingString = lower.replace(/\b(?:my\s+)?(?:blood\s+)?(?:glucose|sugar|level)\s+(?:is\s+)?\d+\s*(?:mg\/dl|mgdl)?\b/gi, '')
+                                .replace(/\b\d+\s+(?:mg\/dl|mgdl)\b/gi, '');
+
     // 2. Clear Delimiters: split by 'and', ',', 'with'
     const delimiterPattern = /\s+and\s+|,|\s+with\s+/gi;
-    let initialParts = lower.split(delimiterPattern).map(p => p.trim()).filter(p => p.length > 2);
+    let initialParts = processingString.split(delimiterPattern).map(p => p.trim()).filter(p => p.length > 2);
 
     // 3. Pre-process "of" and articles: e.g. "3 / 4 of a banana" -> "3/4 banana", "half a banana" -> "half banana"
     initialParts = initialParts.map(part => {
@@ -115,8 +119,7 @@ export function segmentMeal(utterance: string): ExtractionResult {
     for (const part of finalParts) {
         let cleaned = part.trim();
 
-        // 1. Remove glucose part if it exists in the segment
-        let nameOnly = cleaned.replace(/(?:glucose|sugar|level)\s+(?:is\s+)?\d+/, '').replace(/\d+\s+(?:mg\/dl|mgdl)/, '').trim();
+        let nameOnly = cleaned;
 
         // 2. Aggressive Filler & Article Stripping
         // Strips "i had", "i ate", "i've had", "having", etc.

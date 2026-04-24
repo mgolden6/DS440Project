@@ -13,7 +13,7 @@ export default function DoseModal() {
     const settings = useSettingsStore();
 
     const dose = useMemo(() => {
-        if (finalItems.length === 0) return null;
+
         const totalCarbsG = finalItems.reduce((sum, i) => sum + i.carbsG, 0);
         // Use provided glucose or fallback to target (no correction)
         const glucoseMgDl = glucose || settings.targetGlucose;
@@ -31,7 +31,7 @@ export default function DoseModal() {
     }, [finalItems, glucose, icrOverride, settings]);
 
     const handleConfirm = async () => {
-        if (!dose || finalItems.length === 0) return;
+        if (!dose) return;
 
         try {
             const now = Date.now();
