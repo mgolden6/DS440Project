@@ -11,6 +11,7 @@ jest.mock('@/hooks/useVoiceToText', () => ({
         error: null,
         startRecording: jest.fn(),
         stopRecording: jest.fn(),
+        abortRecording: jest.fn(),
     }),
 }));
 
