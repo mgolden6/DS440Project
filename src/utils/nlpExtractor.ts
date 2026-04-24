@@ -22,6 +22,8 @@ const UNIT_ML: Record<string, number> = {
     'ml': 1, 'milliliter': 1, 'milliliters': 1,
     'l': 1000, 'liter': 1000, 'liters': 1000,
     'g': 1, 'gram': 1, 'grams': 1,
+    'mg': 0.001, 'milligram': 0.001, 'milligrams': 0.001,
+    'kg': 1000, 'kilogram': 1000, 'kilograms': 1000,
     'lb': 453.6, 'pound': 453.6, 'pounds': 453.6,
     'slice': 28, 'slices': 28,
     'piece': 100, 'pieces': 100,
@@ -36,6 +38,8 @@ const UNIT_CANONICAL: Record<string, string> = {
     'ml': 'ml', 'milliliter': 'ml', 'milliliters': 'ml',
     'l': 'l', 'liter': 'l', 'liters': 'l',
     'g': 'g', 'gram': 'g', 'grams': 'g',
+    'mg': 'mg', 'milligram': 'mg', 'milligrams': 'mg',
+    'kg': 'kg', 'kilogram': 'kg', 'kilograms': 'kg',
     'lb': 'lb', 'pound': 'lb', 'pounds': 'lb',
     'slice': 'slice', 'slices': 'slice',
     'piece': 'piece', 'pieces': 'piece',
@@ -44,7 +48,8 @@ const UNIT_CANONICAL: Record<string, string> = {
 const NUMBER_WORDS: Record<string, number> = {
     'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
     'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-    'half': 0.5, 'quarter': 0.25, 'third': 0.33, 'a': 1, 'an': 1
+    'half': 0.5, 'quarter': 0.25, 'third': 0.33, 'fourth': 0.25, 'fifth': 0.2,
+    'a': 1, 'an': 1, 'point': 0, 'dot': 0, 'zero': 0
 };
 
 export function segmentMeal(utterance: string): ExtractionResult {
@@ -62,15 +67,34 @@ export function segmentMeal(utterance: string): ExtractionResult {
     const delimiterPattern = /\s+and\s+|,|\s+with\s+/gi;
     let initialParts = lower.split(delimiterPattern).map(p => p.trim()).filter(p => p.length > 2);
 
-    // 3. Pre-process "of": e.g. "3/4 of a banana" -> "3/4 banana"
-    // Supports decimals with leading dots
+    // 3. Pre-process "of" and articles: e.g. "3 / 4 of a banana" -> "3/4 banana", "half a banana" -> "half banana"
     initialParts = initialParts.map(part => {
-        return part.replace(/((?:\d+(?:\/\d+|\.\d+)?|\.\d+)|one|two|three|four|five|six|seven|eight|nine|ten)\s+of\b\s*(?:a|an|the)?\s*/i, '$1 ');
+        // Handle "point 5", "point five", "zero point five" -> "0.5"
+        let cleaned = part.replace(/\b(?:zero\s+)?(?:point|dot)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (match, p1) => {
+            const val = NUMBER_WORDS[p1.toLowerCase()] ?? p1;
+            return `0.${val}`;
+        });
+        
+        // Handle "half of a", "1/4 of a", etc. (allow spaces around slash)
+        // GLOBAL flag is critical here to handle multiple items in one segment
+        cleaned = cleaned.replace(/((?:\d+(?:\s*\/\s*\d+|\.\d+)?|\.\d+)|one|two|three|four|five|six|seven|eight|nine|ten|half|third|quarter|fourth|fifth)\s+of\b\s*(?:a|an|the|some)?\s*/gi, (match, p1) => {
+            // Normalize fraction by removing spaces
+            return p1.replace(/\s+/g, '') + ' ';
+        });
+        
+        // Handle "half a", "quarter an", etc. to prevent splitting on the article later
+        cleaned = cleaned.replace(/\b(half|third|quarter|fourth|fifth)\s+(?:a|an|the|some)\b\s*/gi, '$1 ');
+        
+        // Handle "a half", "a quarter", etc. (leading article)
+        cleaned = cleaned.replace(/\b(?:a|an|the|some)\s+(half|third|quarter|fourth|fifth)\b\s*/gi, '$1 ');
+        
+        return cleaned;
     });
 
-    // 4. Refining segments: look for numbers or articles that aren't at the start and split there too
-    // Supports decimals with leading points (e.g. .75)
-    const numberPattern = /(?:\b\d+(?:\/\d+|\.\d+)?|\.\d+)\b|(?:one|two|three|four|five|six|seven|eight|nine|ten|a|an|some)\b/gi;
+    // 4. Refining segments: look for numbers, articles or fractions that aren't at the start and split there too
+    // Supports decimals with leading points (e.g. .75) and fractions with spaces (e.g. 1 / 4)
+    // IMPORTANT: must use \b on both sides for words to avoid matching 'a' in 'banana'
+    const numberPattern = /(?:\b\d+(?:\s*\/\s*\d+|\.\d+)?|\.\d+)\b|\b(one|two|three|four|five|six|seven|eight|nine|ten|half|third|quarter|fourth|fifth|a|an|some)\b/gi;
     const finalParts: string[] = [];
 
     for (const part of initialParts) {
@@ -96,7 +120,7 @@ export function segmentMeal(utterance: string): ExtractionResult {
 
         // 2. Aggressive Filler & Article Stripping
         // Strips "i had", "i ate", "i've had", "having", etc.
-        const fillerPrefixes = /^(i\s+had|i\s+ate|i've\s+had|i've\s+eaten|i\s+am\s+having|having|ate|had)(?:\s+|$)/i;
+        const fillerPrefixes = /^(i\s+had|i\s+ate|i've\s+had|i've\s+eaten|i\s+am\s+having|having|ate|had|of|and)(?:\s+|$)/i;
         const articlePrefixes = /^(?:a|an|some|the)(?:\s+|$)/i;
 
         nameOnly = nameOnly.replace(fillerPrefixes, '').replace(articlePrefixes, '').trim();
@@ -104,9 +128,9 @@ export function segmentMeal(utterance: string): ExtractionResult {
         // Skip if empty or simple filler
         if (nameOnly.length < 2) continue;
 
-        // Support digits with possible leading dots
-        const numRegex = /(?:\d+(?:\/\d+|\.\d+)?|\.\d+)/;
-        const fractionMatch = nameOnly.match(/^(half|quarter|third)\s+(?:a\s+)?(.+)/);
+        // Support digits with possible leading dots and spaces in fractions
+        const numRegex = /(?:\d+(?:\s*\/\s*\d+|\.\d+)?|\.\d+)/;
+        const fractionMatch = nameOnly.match(/^(half|quarter|third|fourth|fifth)\s+(?:a\s+)?(.+)/);
         const qtyPattern = new RegExp(`^(${numRegex.source})\\s+(.+)`);
         const qtyMatch = nameOnly.match(qtyPattern);
         const wordMatch = nameOnly.match(/^(one|two|three|four|five|six|seven|eight|nine|ten)\s+(.+)/);
@@ -173,11 +197,28 @@ export function segmentMeal(utterance: string): ExtractionResult {
                 });
             }
         } else {
-            segments.push({
-                quantity: 1,
-                name: nameOnly,
-                originalText: cleaned
-            });
+            // Check if it starts with a unit even without an explicit number (e.g. "teaspoon of salt" -> implies 1 teaspoon)
+            const unitKeys = Object.keys(UNIT_ML).join('|');
+            const unitPattern = new RegExp(`^(${unitKeys})\\s+(?:of\\s+)?(.+)$`, 'i');
+            const unitMatch = nameOnly.match(unitPattern);
+            if (unitMatch) {
+                const unitKey = unitMatch[1].toLowerCase();
+                const foodName = unitMatch[2].trim();
+                const mlPerUnit = UNIT_ML[unitKey] ?? 100;
+                segments.push({
+                    quantity: 1,
+                    name: foodName,
+                    originalText: cleaned,
+                    gramsOverride: 1 * mlPerUnit,
+                    unit: UNIT_CANONICAL[unitKey] ?? unitKey,
+                });
+            } else {
+                segments.push({
+                    quantity: 1,
+                    name: nameOnly,
+                    originalText: cleaned
+                });
+            }
         }
     }
 
