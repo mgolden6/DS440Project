@@ -68,9 +68,9 @@ export function segmentMeal(utterance: string): ExtractionResult {
         return part.replace(/((?:\d+(?:\/\d+|\.\d+)?|\.\d+)|one|two|three|four|five|six|seven|eight|nine|ten)\s+of\b\s*(?:a|an|the)?\s*/i, '$1 ');
     });
 
-    // 4. Refining segments: look for numbers that aren't at the start and split there too
+    // 4. Refining segments: look for numbers or articles that aren't at the start and split there too
     // Supports decimals with leading points (e.g. .75)
-    const numberPattern = /(?:\b\d+(?:\/\d+|\.\d+)?|\.\d+)\b|(?:one|two|three|four|five|six|seven|eight|nine|ten)\b/gi;
+    const numberPattern = /(?:\b\d+(?:\/\d+|\.\d+)?|\.\d+)\b|(?:one|two|three|four|five|six|seven|eight|nine|ten|a|an|some)\b/gi;
     const finalParts: string[] = [];
 
     for (const part of initialParts) {
